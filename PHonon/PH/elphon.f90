@@ -321,6 +321,7 @@ SUBROUTINE elphel (irr, npe, imode0, dvscfins)
   !         <\psi(k+q)|dV_{SCF}/du^q_{i a}|\psi(k)>
   !      Original routine written by Francesco Mauri
   !      Modified by A. Floris and I. Timrov to include Hubbard U (01.10.2018)
+  !      Modified by F. Paleari to include bare el-ph coupling (02.10.2020) 
   !
   USE kinds,      ONLY : DP
   USE fft_base,   ONLY : dffts
@@ -334,7 +335,8 @@ SUBROUTINE elphel (irr, npe, imode0, dvscfins)
   USE wvfct,      ONLY : nbnd, npwx
   USE uspp,       ONLY : vkb
   USE el_phon,    ONLY : el_ph_mat, el_ph_mat_rec, el_ph_mat_rec_col, &
-                         comp_elph, done_elph, elph_nbnd_min, elph_nbnd_max
+                         comp_elph, done_elph, elph_nbnd_min, elph_nbnd_max, &
+                         el_ph_mat_bare, el_ph_mat_rec_bare, el_ph_mat_rec_col_bare
   USE modes,      ONLY : u, nmodes
   USE units_ph,   ONLY : iubar, lrbar, iundnsscf, iudvpsi, lrdvpsi
   USE units_lr,   ONLY : iuwfc, lrwfc
@@ -366,7 +368,7 @@ SUBROUTINE elphel (irr, npe, imode0, dvscfins)
   INTEGER :: npw, npwq, nrec, ik, ikk, ikq, ipert, mode, ibnd, jbnd, ir, ig, &
              ipol, ios, ierr, nrec_ahc
   COMPLEX(DP) , ALLOCATABLE :: aux1 (:,:), elphmat (:,:,:), tg_dv(:,:), &
-                               tg_psic(:,:), aux2(:,:)
+                               tg_psic(:,:), aux2(:,:), elphmat_bare(:,:,:), dvbarepsi(:,:)
   INTEGER :: v_siz, incr
   LOGICAL :: exst
   COMPLEX(DP), EXTERNAL :: zdotc
@@ -389,8 +391,12 @@ SUBROUTINE elphel (irr, npe, imode0, dvscfins)
 
   ALLOCATE (aux1    (dffts%nnr, npol))
   ALLOCATE (elphmat ( nbnd , nbnd , npe))
+  ALLOCATE (elphmat_bare ( nbnd , nbnd , npe))
+  ALLOCATE (dvbarepsi ( npwx*npol , nbnd))
   ALLOCATE( el_ph_mat_rec (nbnd,nbnd,nksq,npe) )
+  ALLOCATE( el_ph_mat_rec_bare (nbnd,nbnd,nksq,npe) )
   el_ph_mat_rec=(0.0_DP,0.0_DP)
+  el_ph_mat_rec_bare=(0.0_DP,0.0_DP)
   ALLOCATE (aux2(npwx*npol, nbnd))
   incr=1
   IF ( dffts%has_task_groups ) THEN
@@ -472,6 +478,10 @@ SUBROUTINE elphel (irr, npe, imode0, dvscfins)
            !
         ENDIF
         !
+        ! We keep dvbarepsi to compute the bare coupling  
+        !
+        dvbarepsi = dvpsi
+        !
         ! calculate dvscf_q*psi_k
         !
         IF ( dffts%has_task_groups ) THEN
@@ -522,14 +532,19 @@ SUBROUTINE elphel (irr, npe, imode0, dvscfins)
         ENDIF
         !
         ! calculate elphmat(j,i)=<psi_{k+q,j}|dvscf_q*psi_{k,i}> for this pertur
+        ! we also calculate the bare coupling
         !
         DO ibnd = ibnd_fst, ibnd_lst
            DO jbnd = ibnd_fst, ibnd_lst
               elphmat (jbnd, ibnd, ipert) = zdotc (npwq, evq (1, jbnd), 1, &
                    dvpsi (1, ibnd), 1)
+              elphmat_bare (jbnd, ibnd, ipert) = zdotc (npwq, evq (1, jbnd), 1, &
+                   dvbarepsi (1, ibnd), 1)
               IF (noncolin) &
                  elphmat (jbnd, ibnd, ipert) = elphmat (jbnd, ibnd, ipert)+ &
                    zdotc (npwq, evq(npwx+1,jbnd),1,dvpsi(npwx+1,ibnd), 1)
+                 elphmat_bare (jbnd, ibnd, ipert) = elphmat_bare (jbnd, ibnd, ipert)+ &
+                   zdotc (npwq, evq(npwx+1,jbnd),1,dvbarepsi(npwx+1,ibnd), 1)
            ENDDO
         ENDDO
      ENDDO
@@ -538,14 +553,18 @@ SUBROUTINE elphel (irr, npe, imode0, dvscfins)
      IF (elph_ahc) CYCLE
      !
      CALL mp_sum (elphmat, intra_bgrp_comm)
+     CALL mp_sum (elphmat_bare, intra_bgrp_comm)
      !
-     !  save all e-ph matrix elements into el_ph_mat
+     !  save all e-ph matrix elements into el_ph_mat (and el_ph_mat_bare)
      !
      DO ipert = 1, npe
         DO jbnd = ibnd_fst, ibnd_lst
            DO ibnd = ibnd_fst, ibnd_lst
               el_ph_mat (ibnd, jbnd, ik, ipert + imode0) = elphmat (ibnd, jbnd, ipert)
               el_ph_mat_rec (ibnd, jbnd, ik, ipert ) = elphmat (ibnd, jbnd, ipert)
+              !
+              el_ph_mat_bare (ibnd, jbnd, ik, ipert + imode0) = elphmat_bare (ibnd, jbnd, ipert)
+              el_ph_mat_rec_bare (ibnd, jbnd, ik, ipert ) = elphmat_bare (ibnd, jbnd, ipert)
            ENDDO
         ENDDO
      ENDDO
@@ -555,16 +574,25 @@ SUBROUTINE elphel (irr, npe, imode0, dvscfins)
   if(elph_tetra == 0 .AND. .NOT. elph_ahc) then
      IF (npool>1) THEN
         ALLOCATE(el_ph_mat_rec_col(nbnd,nbnd,nksqtot,npe))
+        ALLOCATE(el_ph_mat_rec_col_bare(nbnd,nbnd,nksqtot,npe))
         CALL el_ph_collect(npe,el_ph_mat_rec,el_ph_mat_rec_col,nksqtot,nksq)
+        CALL el_ph_collect(npe,el_ph_mat_rec_bare,el_ph_mat_rec_col_bare,nksqtot,nksq)
      ELSE
         el_ph_mat_rec_col => el_ph_mat_rec
+        el_ph_mat_rec_col_bare => el_ph_mat_rec_bare
      ENDIF
      CALL ph_writefile('el_phon',current_iq,irr,ierr)
-     IF (npool > 1) DEALLOCATE(el_ph_mat_rec_col)
+     IF (npool > 1) THEN
+        DEALLOCATE(el_ph_mat_rec_col)
+        DEALLOCATE(el_ph_mat_rec_col_bare)
+     ENDIF
   end if
   DEALLOCATE(el_ph_mat_rec)
+  DEALLOCATE(el_ph_mat_rec_bare)
   !
   DEALLOCATE (elphmat)
+  DEALLOCATE (elphmat_bare)
+  DEALLOCATE (dvbarepsi)
   DEALLOCATE (aux1)
   DEALLOCATE (aux2)
   IF ( dffts%has_task_groups ) THEN

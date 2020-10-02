@@ -22,11 +22,11 @@ MODULE el_phon
   REAL(DP) :: el_ph_sigma
   REAL(DP), allocatable :: xk_gamma(:,:)
   COMPLEX(DP), ALLOCATABLE, TARGET :: &
-       el_ph_mat(:,:,:,:)    !  nbnd, nbnd, nks, 3*nat
+       el_ph_mat(:,:,:,:), el_ph_mat_bare(:,:,:,:)
   COMPLEX(DP), ALLOCATABLE, TARGET :: &
-       el_ph_mat_rec(:,:,:,:)    !  nbnd, nbnd, nksq, npe
+       el_ph_mat_rec(:,:,:,:), el_ph_mat_rec_bare(:,:,:,:) !  nbnd, nbnd, nksq, npe
   COMPLEX(DP), POINTER :: &
-       el_ph_mat_rec_col(:,:,:,:)    !  nbnd, nbnd, nksqtot, npe
+       el_ph_mat_rec_col(:,:,:,:), el_ph_mat_rec_col_bare(:,:,:,:)  !  nbnd, nbnd, nksqtot, npe
   CHARACTER (LEN=256) :: auxdvscf
   LOGICAL, ALLOCATABLE :: comp_elph(:), done_elph(:)
   REAL(DP), ALLOCATABLE :: gamma_disp(:,:,:)

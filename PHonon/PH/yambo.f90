@@ -16,6 +16,7 @@ MODULE YAMBO
   LOGICAL :: dvscf_yambo   = .FALSE.
   !
   CHARACTER(300) :: yambo_elph_file_name = " "
+  CHARACTER(300) :: yambo_elph_bare_file_name = " "
   !
 END MODULE YAMBO
 !
@@ -75,7 +76,7 @@ SUBROUTINE elph_yambo_eval_and_IO( )
   USE kinds,       ONLY : DP
   USE ions_base,   ONLY : nat
   USE wvfct,       ONLY : nbnd, et
-  USE el_phon,     ONLY : el_ph_mat
+  USE el_phon,     ONLY : el_ph_mat, el_ph_mat_bare
   USE klist,       ONLY : xk
   USE qpoint,      ONLY : xq, nksq, ikks
   USE modes,       ONLY : u,nmodes
@@ -87,14 +88,14 @@ SUBROUTINE elph_yambo_eval_and_IO( )
   USE control_lr,  ONLY : lgamma
   USE control_ph,  ONLY : current_iq
   USE cell_base,   ONLY : alat
-  USE YAMBO,       ONLY : yambo_elph_file_name
+  USE YAMBO,       ONLY : yambo_elph_file_name, yambo_elph_bare_file_name
   !
   IMPLICIT NONE
   !
   REAL(dp)       :: yambo_kpts(3,nksq)
   CHARACTER(300) :: y_file_name
   COMPLEX(DP)    :: gkkp_disk(nbnd,nbnd,nmodes),y_grad_at_gamma(nbnd,nbnd,nat,3),&
-&                   y_pol_vec(3*nat,nat,3)
+&                   y_pol_vec(3*nat,nat,3),gkkp_bare_disk(nbnd,nbnd,nmodes)
   !
   INTEGER  :: ik, ikk, ikq,  ibnd, jbnd,  mu, i,j
   LOGICAL  :: exst
@@ -108,14 +109,24 @@ SUBROUTINE elph_yambo_eval_and_IO( )
   !
   WRITE (6, '(5x,"electron-phonon interaction (to be used in YAMBO)  ..."/)')
   !
+  ! Here we open two files for the gkkp and the gkkp_bare, respectively
+  !
   IF ( ionode ) open(unit=99,file=trim(yambo_elph_file_name),form='unformatted')
   IF ( ionode ) write (99) nmodes,nksq,nbnd
+  !
+  IF ( ionode ) open(unit=97,file=trim(yambo_elph_bare_file_name),form='unformatted')
+  IF ( ionode ) write (97) nmodes,nksq,nbnd
+  !
   DO ik=1,nksq
      ikk = ikks(ik)
      yambo_kpts(:,ik)=xk(:,ikk)
   END DO
+  !
   IF ( ionode ) write (99) alat,xq,yambo_kpts
   IF ( ionode ) write (99) w2(:)
+  !
+  IF ( ionode ) write (97) alat,xq,yambo_kpts
+  IF ( ionode ) write (97) w2(:)
   !
   DO ik=1,nksq
     ikk = ik
@@ -126,6 +137,7 @@ SUBROUTINE elph_yambo_eval_and_IO( )
     ENDIF
     !
     gkkp_disk=(0.d0, 0.d0)
+    gkkp_bare_disk=(0.d0, 0.d0)
     !
     DO ibnd=1,nbnd
       DO jbnd=1,nbnd
@@ -145,6 +157,8 @@ SUBROUTINE elph_yambo_eval_and_IO( )
             DO i=1,3*nat
               gkkp_disk(ibnd,jbnd,mu)=gkkp_disk(ibnd,jbnd,mu)+&
 &                                     el_ph_mat(ibnd,jbnd,ik,i)*conjg(u(j,i))*dyn(j,mu)
+              gkkp_bare_disk(ibnd,jbnd,mu)=gkkp_bare_disk(ibnd,jbnd,mu)+&
+&                                          el_ph_mat_bare(ibnd,jbnd,ik,i)*conjg(u(j,i))*dyn(j,mu)
             ENDDO
           ENDDO
         ENDDO !mu
@@ -157,8 +171,16 @@ SUBROUTINE elph_yambo_eval_and_IO( )
     IF ( ionode ) write (99) et(:nbnd,ikk)
     IF ( ionode ) write (99) et(:nbnd,ikq)
     !
+    IF ( ionode ) write(97) gkkp_bare_disk(:,:,:)
+    IF ( ionode ) write(97) y_pol_vec(:,:,:)
+    ! FIXME: This Debye-Waller line is redundant but yambo expects it
+    IF ( ionode .and. lgamma ) write(97) y_grad_at_gamma(:,:,:,:)
+    IF ( ionode ) write (97) et(:nbnd,ikk)
+    IF ( ionode ) write (97) et(:nbnd,ikq)
+    !
   ENDDO !ik
   IF ( ionode ) close(99)
+  IF ( ionode ) close(97)
   !
   RETURN
 END SUBROUTINE elph_yambo_eval_and_IO

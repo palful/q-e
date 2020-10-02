@@ -45,7 +45,8 @@ SUBROUTINE prepare_q(auxdyn, do_band, do_iq, setup_pw, iq)
   USE spin_orb,        ONLY : domag
   USE noncollin_module, ONLY : noncolin
   ! YAMBO >
-  USE YAMBO,           ONLY : elph_yambo,yambo_elph_file_name,dvscf_yambo
+  USE YAMBO,           ONLY : elph_yambo,dvscf_yambo, &
+                              yambo_elph_file_name, yambo_elph_bare_file_name
   ! YAMBO <
   USE ahc,             ONLY : elph_ahc
   !
@@ -72,6 +73,7 @@ SUBROUTINE prepare_q(auxdyn, do_band, do_iq, setup_pw, iq)
   ! YAMBO >
   ! Output file
   write (yambo_elph_file_name,'(a,i6.6)') 'elph_dir/s.dbph_',iq
+  write (yambo_elph_bare_file_name,'(a,i6.6)') 'elph_dir/s.dbph_bare_',iq
   !
   inquire(file=trim(yambo_elph_file_name),exist=l_exist)
   !
