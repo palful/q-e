@@ -540,11 +540,13 @@ SUBROUTINE elphel (irr, npe, imode0, dvscfins)
                    dvpsi (1, ibnd), 1)
               elphmat_bare (jbnd, ibnd, ipert) = zdotc (npwq, evq (1, jbnd), 1, &
                    dvbarepsi (1, ibnd), 1)
-              IF (noncolin) &
+              IF (noncolin) THEN
                  elphmat (jbnd, ibnd, ipert) = elphmat (jbnd, ibnd, ipert)+ &
-                   zdotc (npwq, evq(npwx+1,jbnd),1,dvpsi(npwx+1,ibnd), 1)
+                   zdotc (npwq, evq(npwx+1,jbnd),1,dvpsi(npwx+1,ibnd), 1)   
                  elphmat_bare (jbnd, ibnd, ipert) = elphmat_bare (jbnd, ibnd, ipert)+ &
                    zdotc (npwq, evq(npwx+1,jbnd),1,dvbarepsi(npwx+1,ibnd), 1)
+              ENDIF
+              !
            ENDDO
         ENDDO
      ENDDO
